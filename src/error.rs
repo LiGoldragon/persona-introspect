@@ -8,11 +8,15 @@ pub enum Error {
     UnexpectedArgument { got: String },
     #[error("missing introspection socket path")]
     IntrospectionSocketMissing,
+    #[error("unexpected signal frame: {got}")]
+    UnexpectedSignalFrame { got: String },
     #[error("actor operation failed: {operation}: {detail}")]
     Actor {
         operation: &'static str,
         detail: String,
     },
+    #[error("signal frame: {0}")]
+    SignalFrame(#[from] signal_core::FrameError),
     #[error("nota codec: {0}")]
     Nota(#[from] nota_codec::Error),
     #[error("io: {0}")]

@@ -64,9 +64,13 @@ graph TD
 | The daemon does not open peer redb files. | Source scan and tests: no `redb::Database::open` in live path. |
 | The CLI renders NOTA only at the edge. | CLI and projection tests; component clients return typed Signal replies. |
 | Prototype witness travels through Kameo actor root. | `tests/actor_runtime_truth.rs`. |
+| The daemon binds `introspect.sock` and serves Signal frames. | `tests/daemon.rs` via `checks.*.test-daemon-socket`. |
 | Component observations remain component-owned. | Dependency graph: wraps `signal-persona-introspect`, target records come from component contracts. |
 
 ## 5. Prototype status
 
-Scaffold exists. Current reply is intentionally `Unknown` until manager,
-router, and terminal observation relations are wired.
+The daemon binds a Unix socket, applies the requested socket mode when supplied,
+and serves `signal-persona-introspect` frames through the Kameo root. Current
+component observations are intentionally scaffold replies: prototype witness,
+component snapshot, and delivery trace report `Unknown` until manager, router,
+and terminal observation relations are wired.

@@ -3,8 +3,9 @@ use std::io::Write;
 
 use kameo::error::SendError;
 use signal_persona_auth::EngineId;
-use signal_persona_introspect::PrototypeWitnessQuery;
+use signal_persona_introspect::{IntrospectionRequest, PrototypeWitnessQuery};
 
+use crate::daemon::IntrospectionSocket;
 use crate::error::{Error, Result};
 use crate::runtime::{ExplainPrototypeWitness, IntrospectionRoot, IntrospectionRootInput};
 use crate::surface::{Input, Output};
@@ -47,6 +48,17 @@ impl IntrospectCommandLine {
     }
 
     fn run_input(&self, input: Input, mut output: impl Write) -> Result<()> {
+        if let Some(socket) = IntrospectionSocket::from_environment() {
+            let request = match input {
+                Input::PrototypeWitness(query) => {
+                    IntrospectionRequest::PrototypeWitness(query.into_signal())
+                }
+            };
+            let reply = socket.client().submit(request)?;
+            writeln!(output, "{}", Output::from_signal(reply).to_nota()?)?;
+            return Ok(());
+        }
+
         let runtime = tokio::runtime::Runtime::new()?;
         let root = runtime.block_on(IntrospectionRoot::start_root(IntrospectionRootInput {
             targets: crate::runtime::TargetSocketDirectory::empty(),

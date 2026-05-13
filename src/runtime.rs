@@ -4,7 +4,8 @@ use kameo::actor::{Actor, ActorRef, Spawn};
 use kameo::error::Infallible;
 use kameo::message::{Context, Message};
 use signal_persona_introspect::{
-    ComponentReadiness, DeliveryTraceStatus, IntrospectionReply, PrototypeWitness,
+    ComponentReadiness, ComponentSnapshot, DeliveryTrace, DeliveryTraceStatus, EngineSnapshot,
+    IntrospectionReply, IntrospectionRequest, IntrospectionTarget, PrototypeWitness,
     PrototypeWitnessQuery,
 };
 
@@ -24,6 +25,37 @@ impl TargetSocketDirectory {
             router_socket: None,
             terminal_socket: None,
         }
+    }
+
+    pub fn from_environment() -> Self {
+        let mut directory = Self {
+            manager_socket: std::env::var_os("PERSONA_MANAGER_SOCKET_PATH").map(PathBuf::from),
+            router_socket: None,
+            terminal_socket: None,
+        };
+        let count = std::env::var("PERSONA_PEER_SOCKET_COUNT")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(0);
+        for index in 0..count {
+            let Some(component) = std::env::var_os(format!("PERSONA_PEER_{index}_COMPONENT"))
+            else {
+                continue;
+            };
+            let Some(socket) = std::env::var_os(format!("PERSONA_PEER_{index}_SOCKET_PATH")) else {
+                continue;
+            };
+            match component.to_string_lossy().as_ref() {
+                "router" | "persona-router" => {
+                    directory.router_socket = Some(PathBuf::from(socket))
+                }
+                "terminal" | "persona-terminal" => {
+                    directory.terminal_socket = Some(PathBuf::from(socket))
+                }
+                _ => {}
+            }
+        }
+        directory
     }
 }
 
@@ -77,6 +109,39 @@ impl IntrospectionRoot {
             delivery_status: DeliveryTraceStatus::Unknown,
         })
     }
+
+    fn handle_request(&mut self, request: IntrospectionRequest) -> IntrospectionReply {
+        match request {
+            IntrospectionRequest::EngineSnapshot(query) => {
+                self.handled_queries = self.handled_queries.saturating_add(1);
+                IntrospectionReply::EngineSnapshot(EngineSnapshot {
+                    engine: query.engine,
+                    observed_components: vec![
+                        IntrospectionTarget::EngineManager,
+                        IntrospectionTarget::Router,
+                        IntrospectionTarget::Terminal,
+                    ],
+                })
+            }
+            IntrospectionRequest::ComponentSnapshot(query) => {
+                self.handled_queries = self.handled_queries.saturating_add(1);
+                IntrospectionReply::ComponentSnapshot(ComponentSnapshot {
+                    engine: query.engine,
+                    target: query.target,
+                    readiness: ComponentReadiness::Unknown,
+                })
+            }
+            IntrospectionRequest::DeliveryTrace(query) => {
+                self.handled_queries = self.handled_queries.saturating_add(1);
+                IntrospectionReply::DeliveryTrace(DeliveryTrace {
+                    engine: query.engine,
+                    correlation: query.correlation,
+                    status: DeliveryTraceStatus::Unknown,
+                })
+            }
+            IntrospectionRequest::PrototypeWitness(query) => self.prototype_witness(query),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,6 +174,22 @@ impl Message<ExplainPrototypeWitness> for IntrospectionRoot {
         _context: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
         Ok(self.prototype_witness(message.query))
+    }
+}
+
+pub struct HandleIntrospectionRequest {
+    pub request: IntrospectionRequest,
+}
+
+impl Message<HandleIntrospectionRequest> for IntrospectionRoot {
+    type Reply = Result<IntrospectionReply>;
+
+    async fn handle(
+        &mut self,
+        message: HandleIntrospectionRequest,
+        _context: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        Ok(self.handle_request(message.request))
     }
 }
 
