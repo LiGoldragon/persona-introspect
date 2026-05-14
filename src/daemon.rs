@@ -15,6 +15,7 @@ use crate::error::{Error, Result};
 use crate::runtime::{
     HandleIntrospectionRequest, IntrospectionRoot, IntrospectionRootInput, TargetSocketDirectory,
 };
+use crate::supervision::{SupervisionListener, SupervisionProfile};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntrospectionDaemonCommandLine {
@@ -145,6 +146,9 @@ impl IntrospectionDaemon {
 
     pub fn run(self) -> Result<()> {
         let bound = self.bind()?;
+        let _supervision = SupervisionListener::from_environment(SupervisionProfile::introspect())
+            .map(SupervisionListener::spawn)
+            .transpose()?;
         eprintln!(
             "persona-introspect-daemon socket={}",
             bound.socket.display()
@@ -320,7 +324,7 @@ impl IntrospectionFrameCodec {
         writer: &mut impl Write,
         request: IntrospectionRequest,
     ) -> Result<()> {
-        let frame = IntrospectionFrame::new(FrameBody::Request(Request::assert(request)));
+        let frame = IntrospectionFrame::new(FrameBody::Request(Request::from_payload(request)));
         self.write_frame(writer, &frame)
     }
 

@@ -64,6 +64,13 @@
               cargoTestExtraArgs = "--test daemon daemon_applies_spawn_envelope_socket_mode -- --exact";
             }
           );
+          test-daemon-answers-component-supervision-relation = craneLib.cargoTest (
+            commonArgs
+            // {
+              inherit cargoArtifacts;
+              cargoTestExtraArgs = "--test daemon daemon_answers_component_supervision_relation -- --exact";
+            }
+          );
           fmt = craneLib.cargoFmt { inherit src; };
           clippy = craneLib.cargoClippy (
             commonArgs

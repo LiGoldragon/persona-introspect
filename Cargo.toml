@@ -21,10 +21,11 @@ name = "persona-introspect-daemon"
 path = "src/bin/persona_introspect_daemon.rs"
 
 [dependencies]
-kameo                     = { version = "0.20", default-features = false }
+kameo                     = { version = "0.20", default-features = false, features = ["macros"] }
 nota-codec                = { git = "https://github.com/LiGoldragon/nota-codec.git", branch = "main" }
 rkyv                      = "0.8"
 signal-core               = { git = "https://github.com/LiGoldragon/signal-core.git" }
+signal-persona            = { git = "https://github.com/LiGoldragon/signal-persona.git" }
 signal-persona-auth       = { git = "https://github.com/LiGoldragon/signal-persona-auth.git" }
 signal-persona-introspect = { git = "https://github.com/LiGoldragon/signal-persona-introspect.git" }
 thiserror                 = "2"

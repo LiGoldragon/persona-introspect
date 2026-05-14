@@ -1,7 +1,21 @@
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::net::UnixStream;
+use std::path::PathBuf;
+use std::process::{Child, Command};
 use std::thread;
+use std::time::{Duration, Instant};
 
-use persona_introspect::daemon::{IntrospectionDaemon, IntrospectionSignalClient, SocketMode};
+use persona_introspect::{
+    SupervisionFrameCodec,
+    daemon::{IntrospectionDaemon, IntrospectionSignalClient, SocketMode},
+};
+use signal_core::{FrameBody, Request};
+use signal_persona::{
+    ComponentHealth, ComponentHealthQuery, ComponentHello, ComponentKind, ComponentName,
+    ComponentReadinessQuery, SupervisionFrame, SupervisionProtocolVersion, SupervisionReply,
+    SupervisionRequest,
+};
 use signal_persona_auth::EngineId;
 use signal_persona_introspect::{
     ComponentReadiness, ComponentSnapshotQuery, CorrelationId, DeliveryTraceQuery,
@@ -73,6 +87,71 @@ fn daemon_serves_prototype_witness_over_signal_socket() {
 }
 
 #[test]
+fn daemon_answers_component_supervision_relation() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let socket = directory.path().join("introspect.sock");
+    let supervision_socket = directory.path().join("supervision.sock");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_persona-introspect-daemon"))
+        .arg(&socket)
+        .env("PERSONA_SOCKET_MODE", "600")
+        .env("PERSONA_SUPERVISION_SOCKET_PATH", &supervision_socket)
+        .env("PERSONA_SUPERVISION_SOCKET_MODE", "600")
+        .spawn()
+        .expect("persona-introspect-daemon starts");
+
+    wait_for_socket(&supervision_socket);
+    let mode = std::fs::metadata(&supervision_socket)
+        .expect("supervision socket metadata")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o600);
+
+    let mut stream = UnixStream::connect(&supervision_socket).expect("client connects");
+    let codec = SupervisionFrameCodec::new(1024 * 1024);
+
+    write_supervision_request(
+        &mut stream,
+        SupervisionRequest::ComponentHello(ComponentHello {
+            expected_component: ComponentName::new("persona-introspect"),
+            expected_kind: ComponentKind::Introspect,
+            supervision_protocol_version: SupervisionProtocolVersion::new(1),
+        }),
+    );
+    assert!(matches!(
+        codec.read_reply(&mut stream).expect("identity reply"),
+        SupervisionReply::ComponentIdentity(identity)
+            if identity.name.as_str() == "persona-introspect"
+                && identity.kind == ComponentKind::Introspect
+    ));
+
+    write_supervision_request(
+        &mut stream,
+        SupervisionRequest::ComponentReadinessQuery(ComponentReadinessQuery {
+            component: ComponentName::new("persona-introspect"),
+        }),
+    );
+    assert!(matches!(
+        codec.read_reply(&mut stream).expect("readiness reply"),
+        SupervisionReply::ComponentReady(_)
+    ));
+
+    write_supervision_request(
+        &mut stream,
+        SupervisionRequest::ComponentHealthQuery(ComponentHealthQuery {
+            component: ComponentName::new("persona-introspect"),
+        }),
+    );
+    assert!(matches!(
+        codec.read_reply(&mut stream).expect("health reply"),
+        SupervisionReply::ComponentHealthReport(report)
+            if report.health == ComponentHealth::Running
+    ));
+
+    stop_child(&mut child);
+}
+
+#[test]
 fn daemon_serves_scaffold_observation_replies_for_all_request_families() {
     let engine = EngineId::new("prototype");
 
@@ -126,4 +205,31 @@ fn daemon_serves_scaffold_observation_replies_for_all_request_families() {
         }
         other => panic!("expected delivery trace, got {other:?}"),
     }
+}
+
+fn write_supervision_request(stream: &mut UnixStream, request: SupervisionRequest) {
+    let frame = SupervisionFrame::new(FrameBody::Request(Request::from_payload(request)));
+    let bytes = frame
+        .encode_length_prefixed()
+        .expect("supervision request encodes");
+    stream
+        .write_all(bytes.as_slice())
+        .expect("supervision request writes");
+    stream.flush().expect("supervision request flushes");
+}
+
+fn wait_for_socket(socket: &PathBuf) {
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_secs(5) {
+        if socket.exists() {
+            return;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    panic!("socket was not created: {}", socket.display());
+}
+
+fn stop_child(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
 }
