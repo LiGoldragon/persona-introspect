@@ -57,6 +57,13 @@
               cargoTestExtraArgs = "--test daemon";
             }
           );
+          test-daemon-applies-spawn-envelope-socket-mode = craneLib.cargoTest (
+            commonArgs
+            // {
+              inherit cargoArtifacts;
+              cargoTestExtraArgs = "--test daemon daemon_applies_spawn_envelope_socket_mode -- --exact";
+            }
+          );
           fmt = craneLib.cargoFmt { inherit src; };
           clippy = craneLib.cargoClippy (
             commonArgs

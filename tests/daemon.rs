@@ -35,6 +35,24 @@ fn serve_one(request: IntrospectionRequest) -> IntrospectionReply {
 }
 
 #[test]
+fn daemon_applies_spawn_envelope_socket_mode() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let socket = directory.path().join("introspect.sock");
+    let bound = IntrospectionDaemon::from_socket(socket)
+        .with_socket_mode(SocketMode::from_octal(0o600))
+        .bind()
+        .expect("daemon binds");
+
+    let mode = std::fs::metadata(bound.socket())
+        .expect("socket metadata")
+        .permissions()
+        .mode()
+        & 0o777;
+
+    assert_eq!(mode, 0o600);
+}
+
+#[test]
 fn daemon_serves_prototype_witness_over_signal_socket() {
     let reply = serve_one(IntrospectionRequest::PrototypeWitness(
         PrototypeWitnessQuery {
